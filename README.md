@@ -21,6 +21,7 @@
 
 ## 💼 Skills
 
+![](https://img.shields.io/badge/Code-Python-informational?style=flat&logo=Python&logoColor=white&color=4AB197)
 ![](https://img.shields.io/badge/Code-C-informational?style=flat&logo=c&logoColor=white&color=4AB197)
 ![](https://img.shields.io/badge/Code-C++-informational?style=flat&logo=c%2B%2B&logoColor=white&color=4AB197)
 ![](https://img.shields.io/badge/Code-CSharp-informational?style=flat&logo=c-sharp&logoColor=white&color=4AB197)
@@ -28,8 +29,7 @@
 ![](https://img.shields.io/badge/Code-TypeScript-informational?style=flat&logo=TypeScript&logoColor=white&color=4AB197)
 ![](https://img.shields.io/badge/Code-MySQL-informational?style=flat&logo=MySQL&logoColor=white&color=4AB197)
 
-<details>
-<summary>More Skills</summary>
+
 <br>
 
 ![](https://img.shields.io/badge/Tools-Docker-informational?style=flat&logo=docker&logoColor=white&color=4AB197)
@@ -39,7 +39,5 @@
 ![](https://img.shields.io/badge/Tools-NPM-informational?style=flat&logo=npm&logoColor=white&color=4AB197)
 ![](https://img.shields.io/badge/Tools-GitHub-informational?style=flat&logo=GitHub&logoColor=white&color=4AB197)
 ![](https://img.shields.io/badge/Tools-GitLab-informational?style=flat&logo=GitLab&logoColor=white&color=4AB197)
-
-</details>
 
 <br>
