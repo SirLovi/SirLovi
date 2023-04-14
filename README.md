@@ -1,3 +1,5 @@
+<p align="left"> <img src=https://komarev.com/ghpvc/?username=SirLovi alt=SirLovi/> </p>
+
 ![](https://visitor-badge.glitch.me/badge?page_id=SirLovi.SirLovi)
 
 <a href="https://github.com/SirLovi">
