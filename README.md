@@ -1,4 +1,3 @@
-![](https://visitor-badge.glitch.me/badge?page_id=SirLovi.SirLovi)
 ![](https://komarev.com/ghpvc/?username=SirLovi)
 
 <a href="https://github.com/SirLovi">
