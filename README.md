@@ -17,9 +17,3 @@
     <img src="https://github-profile-trophy.vercel.app/?username=SirLovi&theme=onedark&row=1" alt="GitHub Trophies" />
   </a>
 </p>
-
-<p align="center">
-  <a href="https://github.com/SirLovi">
-    <img src="https://github-readme-activity-graph.vercel.app/graph?username=SirLovi&theme=github-dark" alt="GitHub Activity Graph" />
-  </a>
-</p>
