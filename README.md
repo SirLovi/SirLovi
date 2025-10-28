@@ -1,7 +1,5 @@
 <p align="center">
   <img src="https://komarev.com/ghpvc/?username=SirLovi&color=brightgreen&style=flat" alt="Profile Views"/>
-  <img src="https://img.shields.io/github/followers/SirLovi?label=Followers&style=flat&color=4AB097" alt="GitHub Followers"/>
-  <img src="https://img.shields.io/github/stars/SirLovi?affiliations=OWNER%2CCOLLABORATOR&label=Profile%20Stars&style=flat&color=1f6feb" alt="Profile Stars"/>
 </p>
 
 <p align="center">
