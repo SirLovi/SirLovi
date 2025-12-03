@@ -20,27 +20,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate profile summary cards
-        uses: vn7n24fzkq/github-profile-summary-cards@release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          USERNAME: SirLovi
-          UTC_OFFSET: 0
-
-      - name: Cache trophy image as static asset
+      - name: Cache profile images as static assets
         run: |
+          set -euo pipefail
           mkdir -p assets
+          curl -fL "https://github-readme-streak-stats.herokuapp.com?user=SirLovi&theme=oceanic-next&border_radius=5&mode=weekly&border=EBEBEB&currStreakNum=C9CACC&sideNums=C9CACC&currStreakLabel=FBFCFF&sideLabels=FBFCFF&background=1A2B34&ring=CFD359" -o assets/streak.svg
+          curl -fL "https://github-readme-stats.vercel.app/api?username=SirLovi&show_icons=true&include_all_commits=true&count_private=true&&title_color=ffffff&text_color=c9cacc&icon_color=4AB097&bg_color=1A2B34" -o assets/stats.svg
+          curl -fL "https://github-readme-stats.vercel.app/api/top-langs/?username=SirLovi&layout=compact&card_width=320&langs_count=8&title_color=ffffff&text_color=c9cacc&icon_color=4AB097&bg_color=1A2B34" -o assets/top-langs.svg
           curl -fL "https://github-profile-trophy.vercel.app/?username=SirLovi&theme=onedark&row=1&margin-w=10" -o assets/github-profile-trophy.svg
 
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add profile-summary-card-output assets
+          git add assets
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "chore: update profile summary cards"
+          git commit -m "chore: update cached profile assets"
           git push
