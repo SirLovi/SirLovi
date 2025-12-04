@@ -50,8 +50,8 @@ jobs:
           mkdir -p assets
 
           fetch "https://github-readme-streak-stats.herokuapp.com?user=SirLovi&theme=oceanic-next&border_radius=5&mode=weekly&border=EBEBEB&currStreakNum=C9CACC&sideNums=C9CACC&currStreakLabel=FBFCFF&sideLabels=FBFCFF&background=1A2B34&ring=CFD359" assets/streak.svg "streak"
-          fetch "https://github-readme-stats.vercel.app/api?username=SirLovi&show_icons=true&include_all_commits=true&count_private=true&&title_color=ffffff&text_color=c9cacc&icon_color=4AB097&bg_color=1A2B34" assets/stats.svg "stats"
-          fetch "https://github-readme-stats.vercel.app/api/top-langs/?username=SirLovi&layout=compact&card_width=320&langs_count=8&title_color=ffffff&text_color=c9cacc&icon_color=4AB097&bg_color=1A2B34" assets/top-langs.svg "top-langs"
+          fetch "https://github-readme-stats-fast.vercel.app/api?username=SirLovi&show_icons=true&include_all_commits=true&count_private=true&&title_color=ffffff&text_color=c9cacc&icon_color=4AB097&bg_color=1A2B34" assets/stats.svg "stats"
+          fetch "https://github-readme-stats-fast.vercel.app/api/top-langs/?username=SirLovi&layout=compact&card_width=320&langs_count=8&title_color=ffffff&text_color=c9cacc&icon_color=4AB097&bg_color=1A2B34" assets/top-langs.svg "top-langs"
           fetch "https://github-profile-trophy.vercel.app/?username=SirLovi&theme=onedark&row=1&margin-w=10" assets/github-profile-trophy.svg "trophy"
 
       - name: Commit and push if changed
