@@ -1,0 +1,276 @@
+name: Delayed Dependabot auto-merge
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+      timezone: "Europe/Prague"
+  workflow_dispatch:
+
+permissions:
+  checks: read
+  contents: write
+  pull-requests: write
+  statuses: read
+
+concurrency:
+  group: dependabot-auto-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: Merge validated Dependabot PRs
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
+
+    steps:
+      - name: Merge mature, tested dependency updates
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          MINIMUM_AGE_HOURS: "48"
+        run: |
+          set -euo pipefail
+
+          api="https://api.github.com/repos/${REPO}"
+          cutoff_epoch="$(( $(date -u +%s) - MINIMUM_AGE_HOURS * 3600 ))"
+
+          api_get() {
+            curl -fsSL \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "$1"
+          }
+
+          safe_dependency_path() {
+            case "$1" in
+              .github/workflows/profile-cards.yml|.github/workflows/validate.yml)
+                return 0
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+
+          pulls_response="$(api_get "${api}/pulls?state=open&per_page=100")"
+
+          candidates="$(jq -r '
+            .[]
+            | select(.user.login == "dependabot[bot]")
+            | select(.draft == false)
+            | select(.head.ref | startswith("dependabot/"))
+            | select(.head.repo.full_name == .base.repo.full_name)
+            | select(.base.ref == "main")
+            | [.number, .head.sha]
+            | @tsv
+          ' <<<"$pulls_response")"
+
+          if [ -z "$candidates" ]; then
+            echo 'No open Dependabot PRs targeting main.'
+            exit 0
+          fi
+
+          failures=0
+
+          while IFS=$'\t' read -r pr_number listed_head_sha; do
+            [ -n "$pr_number" ] || continue
+
+            pull_response="$(api_get "${api}/pulls/${pr_number}")"
+
+            if [ "$(jq -r '.state' <<<"$pull_response")" != 'open' ]; then
+              echo "PR #${pr_number} is no longer open; skipping."
+              continue
+            fi
+
+            if [ "$(jq -r '.user.login' <<<"$pull_response")" != 'dependabot[bot]' ]; then
+              echo "PR #${pr_number} is not authored by Dependabot; refusing to merge."
+              failures=1
+              continue
+            fi
+
+            current_head_sha="$(jq -r '.head.sha' <<<"$pull_response")"
+            current_base_ref="$(jq -r '.base.ref' <<<"$pull_response")"
+            current_head_ref="$(jq -r '.head.ref' <<<"$pull_response")"
+            current_head_repo="$(jq -r '.head.repo.full_name // empty' <<<"$pull_response")"
+            current_base_repo="$(jq -r '.base.repo.full_name' <<<"$pull_response")"
+
+            if [ "$current_base_ref" != 'main' ]; then
+              echo "PR #${pr_number} now targets ${current_base_ref}; refusing to merge."
+              failures=1
+              continue
+            fi
+
+            case "$current_head_ref" in
+              dependabot/*) ;;
+              *)
+                echo "PR #${pr_number} no longer uses a Dependabot branch; refusing to merge."
+                failures=1
+                continue
+                ;;
+            esac
+
+            if [ -z "$current_head_repo" ] || [ "$current_head_repo" != "$current_base_repo" ]; then
+              echo "PR #${pr_number} does not originate from this repository; refusing to merge."
+              failures=1
+              continue
+            fi
+
+            if [ "$current_head_sha" != "$listed_head_sha" ]; then
+              echo "PR #${pr_number} changed while being evaluated; deferring."
+              continue
+            fi
+
+            changed_files="$(jq -r '.changed_files' <<<"$pull_response")"
+            if [ "$changed_files" -le 0 ] || [ "$changed_files" -gt 10 ]; then
+              echo "PR #${pr_number} changes ${changed_files} files; refusing unattended merge."
+              continue
+            fi
+
+            files_response="$(api_get "${api}/pulls/${pr_number}/files?per_page=100")"
+            returned_files="$(jq -r 'length' <<<"$files_response")"
+
+            if [ "$returned_files" -ne "$changed_files" ]; then
+              echo "PR #${pr_number} reports ${changed_files} changed files but ${returned_files} were returned; refusing to merge."
+              failures=1
+              continue
+            fi
+
+            unsupported_files=0
+            while IFS= read -r changed_path; do
+              [ -n "$changed_path" ] || continue
+              if ! safe_dependency_path "$changed_path"; then
+                echo "PR #${pr_number} requires manual review because it changes ${changed_path}."
+                unsupported_files=1
+              fi
+            done < <(
+              jq -r '
+                .[]
+                | .filename, (.previous_filename // empty)
+              ' <<<"$files_response" | sort -u
+            )
+
+            if [ "$unsupported_files" -ne 0 ]; then
+              continue
+            fi
+
+            commit_response="$(api_get "${api}/commits/${current_head_sha}")"
+            committed_at="$(jq -r '.commit.committer.date // .commit.author.date // empty' <<<"$commit_response")"
+
+            if [ -z "$committed_at" ]; then
+              echo "Could not determine the latest commit age for PR #${pr_number}."
+              failures=1
+              continue
+            fi
+
+            commit_epoch="$(date -u -d "$committed_at" +%s)"
+            if [ "$commit_epoch" -gt "$cutoff_epoch" ]; then
+              remaining_seconds="$(( commit_epoch - cutoff_epoch ))"
+              remaining_hours="$(( (remaining_seconds + 3599) / 3600 ))"
+              echo "PR #${pr_number} is quarantined for about ${remaining_hours} more hour(s)."
+              continue
+            fi
+
+            checks_response="$(api_get "${api}/commits/${current_head_sha}/check-runs?filter=latest&per_page=100")"
+            total_checks="$(jq -r '.total_count' <<<"$checks_response")"
+            returned_checks="$(jq -r '.check_runs | length' <<<"$checks_response")"
+
+            if [ "$total_checks" -eq 0 ]; then
+              echo "PR #${pr_number} has no CI check runs; refusing to merge."
+              continue
+            fi
+
+            if [ "$total_checks" -ne "$returned_checks" ]; then
+              echo "PR #${pr_number} has ${total_checks} check runs but only ${returned_checks} were returned; refusing to merge."
+              failures=1
+              continue
+            fi
+
+            incomplete_checks="$(jq -r '[.check_runs[] | select(.status != "completed")] | length' <<<"$checks_response")"
+            unacceptable_checks="$(jq -r '
+              [.check_runs[]
+                | select(
+                    .status == "completed"
+                    and (.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")
+                  )
+              ] | length
+            ' <<<"$checks_response")"
+
+            if [ "$incomplete_checks" -ne 0 ] || [ "$unacceptable_checks" -ne 0 ]; then
+              echo "PR #${pr_number} is blocked by check runs:"
+              jq -r '
+                .check_runs[]
+                | select(
+                    .status != "completed"
+                    or (.conclusion != "success" and .conclusion != "neutral" and .conclusion != "skipped")
+                  )
+                | "  \(.name): status=\(.status), conclusion=\(.conclusion // "none")"
+              ' <<<"$checks_response"
+              continue
+            fi
+
+            statuses_response="$(api_get "${api}/commits/${current_head_sha}/status")"
+            unacceptable_statuses="$(jq -r '[.statuses[] | select(.state != "success")] | length' <<<"$statuses_response")"
+
+            if [ "$unacceptable_statuses" -ne 0 ]; then
+              echo "PR #${pr_number} is blocked by commit statuses:"
+              jq -r '
+                .statuses[]
+                | select(.state != "success")
+                | "  \(.context): state=\(.state)"
+              ' <<<"$statuses_response"
+              continue
+            fi
+
+            final_pull_response="$(api_get "${api}/pulls/${pr_number}")"
+            if [ "$(jq -r '.state' <<<"$final_pull_response")" != 'open' ] \
+              || [ "$(jq -r '.head.sha' <<<"$final_pull_response")" != "$current_head_sha" ] \
+              || [ "$(jq -r '.base.ref' <<<"$final_pull_response")" != 'main' ]; then
+              echo "PR #${pr_number} changed before merge; deferring."
+              continue
+            fi
+
+            merge_payload="$(jq -n \
+              --arg sha "$current_head_sha" \
+              '{sha: $sha, merge_method: "squash"}')"
+            merge_body="$(mktemp)"
+
+            http_status="$(curl -sS \
+              -o "$merge_body" \
+              -w '%{http_code}' \
+              -X PUT \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              -H 'Content-Type: application/json' \
+              --data "$merge_payload" \
+              "${api}/pulls/${pr_number}/merge")"
+
+            case "$http_status" in
+              200)
+                if jq -e '.merged == true' "$merge_body" >/dev/null; then
+                  echo "Squash-merged Dependabot PR #${pr_number} into main."
+                else
+                  echo "GitHub returned HTTP 200 but did not merge PR #${pr_number}:"
+                  jq . "$merge_body"
+                  failures=1
+                fi
+                ;;
+              405)
+                message="$(jq -r '.message // "merge requirements are not ready"' "$merge_body")"
+                echo "PR #${pr_number} is not mergeable yet (${message}); retrying on the next run."
+                ;;
+              409)
+                echo "PR #${pr_number} changed during the merge request; deferring."
+                ;;
+              *)
+                echo "Unexpected HTTP ${http_status} while merging PR #${pr_number}:"
+                jq . "$merge_body" 2>/dev/null || cat "$merge_body"
+                failures=1
+                ;;
+            esac
+
+            rm -f "$merge_body"
+          done <<<"$candidates"
+
+          exit "$failures"
