@@ -1,0 +1,162 @@
+name: Validate profile automation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/dependabot.yml"
+      - ".github/workflows/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/dependabot.yml"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-profile-automation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Profile automation validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow and dependency policy
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          errors: list[str] = []
+          workflow_dir = Path(".github/workflows")
+          workflow_files = sorted(
+              set(workflow_dir.glob("*.yml")) | set(workflow_dir.glob("*.yaml"))
+          )
+          expected_workflows = {
+              "profile-cards.yml",
+              "validate.yml",
+              "dependabot-automerge.yml",
+          }
+
+          missing_workflows = expected_workflows - {path.name for path in workflow_files}
+          if missing_workflows:
+              errors.append(
+                  "missing required workflow(s): " + ", ".join(sorted(missing_workflows))
+              )
+
+          allowed_actions = {"actions/checkout"}
+
+          for path in workflow_files:
+              text = path.read_text(encoding="utf-8")
+
+              if re.search(r"(?m)^name:\s*\S", text) is None:
+                  errors.append(f"{path}: missing top-level name")
+              if re.search(r"(?m)^on:\s*$", text) is None:
+                  errors.append(f"{path}: missing block-form top-level on")
+              if re.search(r"(?m)^permissions:\s*$", text) is None:
+                  errors.append(f"{path}: missing explicit permissions")
+              if "pull_request_target:" in text:
+                  errors.append(f"{path}: pull_request_target is forbidden")
+
+              for line_number, line in enumerate(text.splitlines(), start=1):
+                  match = re.match(r"^\s*uses:\s*([^\s#]+)", line)
+                  if match is None:
+                      continue
+
+                  target = match.group(1)
+                  if target.startswith("./"):
+                      continue
+
+                  if target.startswith("docker://"):
+                      if re.fullmatch(
+                          r"docker://[^@]+@sha256:[0-9a-f]{64}", target
+                      ) is None:
+                          errors.append(
+                              f"{path}:{line_number}: Docker action is not digest-pinned"
+                          )
+                      continue
+
+                  action_match = re.fullmatch(r"([^@]+)@([0-9a-f]{40})", target)
+                  if action_match is None:
+                      errors.append(
+                          f"{path}:{line_number}: action is not pinned to a full commit SHA"
+                      )
+                      continue
+
+                  action_name = action_match.group(1)
+                  if action_name not in allowed_actions:
+                      errors.append(
+                          f"{path}:{line_number}: unexpected external action {action_name}"
+                      )
+
+          dependabot_path = Path(".github/dependabot.yml")
+          if not dependabot_path.is_file():
+              errors.append(".github/dependabot.yml is missing")
+          else:
+              dependabot = dependabot_path.read_text(encoding="utf-8")
+              required_dependabot_policy = (
+                  'version: 2',
+                  'package-ecosystem: "github-actions"',
+                  'interval: "weekly"',
+                  'day: "monday"',
+                  'timezone: "Europe/Prague"',
+                  'default-days: 3',
+                  'open-pull-requests-limit: 1',
+              )
+              for snippet in required_dependabot_policy:
+                  if snippet not in dependabot:
+                      errors.append(
+                          f".github/dependabot.yml: missing required policy {snippet!r}"
+                      )
+
+          automerge_path = workflow_dir / "dependabot-automerge.yml"
+          if automerge_path.is_file():
+              automerge = automerge_path.read_text(encoding="utf-8")
+              required_automerge_policy = (
+                  'MINIMUM_AGE_HOURS: "48"',
+                  'select(.user.login == "dependabot[bot]")',
+                  'select(.base.ref == "main")',
+                  '.github/workflows/profile-cards.yml|.github/workflows/validate.yml',
+                  'if [ "$total_checks" -eq 0 ]',
+                  'merge_method: "squash"',
+              )
+              for snippet in required_automerge_policy:
+                  if snippet not in automerge:
+                      errors.append(
+                          f"{automerge_path}: missing required guard {snippet!r}"
+                      )
+
+          profile_path = workflow_dir / "profile-cards.yml"
+          if profile_path.is_file():
+              profile = profile_path.read_text(encoding="utf-8")
+              if "contents: write" not in profile:
+                  errors.append(
+                      f"{profile_path}: profile asset refresh needs explicit contents: write"
+                  )
+
+          if errors:
+              print("Automation validation failed:", file=sys.stderr)
+              for error in errors:
+                  print(f"- {error}", file=sys.stderr)
+              raise SystemExit(1)
+
+          print(
+              f"Validated {len(workflow_files)} workflow files and the Dependabot policy."
+          )
+          PY
