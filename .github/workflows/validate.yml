@@ -71,7 +71,7 @@ jobs:
                   errors.append(f"{path}: missing block-form top-level on")
               if re.search(r"(?m)^permissions:\s*$", text) is None:
                   errors.append(f"{path}: missing explicit permissions")
-              if "pull_request_target:" in text:
+              if re.search(r"(?m)^\s*pull_request_target:\s*$", text) is not None:
                   errors.append(f"{path}: pull_request_target is forbidden")
 
               for line_number, line in enumerate(text.splitlines(), start=1):
